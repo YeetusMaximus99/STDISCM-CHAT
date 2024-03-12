@@ -1,4 +1,9 @@
-import socket 
+import socket
+from threading import Thread
+def listener(sock):
+    while True:
+        rcv = sock.recv(1024).decode()
+        print("\n" +rcv+ "\n")
 
 host = "localhost"
 port = 8080
@@ -6,13 +11,21 @@ port = 8080
 sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 #connect to server
 sock.connect((host, port))
+name = input("Enter your name: ")
 #recieve message
-message = sock.recv(1024).decode()
+t = Thread(target=listener,args =(sock,))
 
-#while messages are being sent then print message 
-while message:
-    print("Message : ", message)
-    message = sock.recv(1024).decode()
+t.daemon = True
+
+t.start()
 
 
+while True:
+    msg = input()
+    if(msg == "quit"):
+        break
+    msg = name + ":" + msg
+    sock.send(msg.encode())
 sock.close()
+
+

@@ -1,16 +1,46 @@
 import socket
+from threading import Thread
+def listener(cs,client_sockets):
+    while True:
+        try:
+            # Listen for client message
+            msg = cs.recv(1024).decode()
+        except Exception as e:
+            print(e)
+            #remove faulty client
+            client_sockets.remove(cs)
+        # iterate over all connected sockets
+        for client_socket in client_sockets:
+            # and send the message
+            client_socket.send(msg.encode())
 
-host = "localhost"
-port = 8080
-x = 1
-sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-sock.bind((host, port))
-#x = Max number of users
-sock.listen(x)
-print("The server is running and listening on port : ", port)
-#Accept connection
-connection, address = sock.accept() 
-print("Client", connection, "has joined us recently with address : ", address)
+host = input("Enter Host Address:")
+port =int(input("Enter Port Used:"))
+
+x = 5
+client_sockets = set()
+s = socket.socket()
+#Port is made reuseable
+s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+#bind port to address
+s.bind((host, port))
+#amount of clients that can listen
+s.listen(x)
+print(f"[*] Listening as {host}:{port}")
+
+
 while True:
-    message = input("Type Message Here: ") 
-    connection.send(message.encode())
+    client_socket, client_address = s.accept()
+    print(f"[+] {client_address} is here!")
+    # add client
+    client_sockets.add(client_socket)
+    # Thread to listen for client
+    t = Thread(target=listener, args=(client_socket,client_sockets))
+    t.daemon = True
+    t.start()
+
+# close client sockets
+for cs in client_sockets:
+    cs.close()
+# close server socket
+s.close()
