@@ -1,5 +1,6 @@
 import socket
 from threading import Thread
+import mysql.connector
 def listener(cs,client_sockets):
     while True:
         try:
@@ -12,8 +13,17 @@ def listener(cs,client_sockets):
         # iterate over all connected sockets
         for client_socket in client_sockets:
             # and send the message
+            db = mysql.connector.connect(host="localhost",    # your host, usually localhost
+                     user="root",         # your username
+                     passwd="0000",  # your password
+                     db="new_schema")
+            mycursor = db.cursor()
+            sql= "INSERT INTO messages (user,messagescol) VALUES (%s,%s)"
+            val = ("test",msg.encode())
+            mycursor.execute(sql, val)
+            db.commit()
             client_socket.send(msg.encode())
-
+            
 host = input("Enter Host Address:")
 port =int(input("Enter Port Used:"))
 
