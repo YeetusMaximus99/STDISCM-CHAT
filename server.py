@@ -15,7 +15,7 @@ def listener(cs,client_sockets):
             # and send the message
             db = mysql.connector.connect(host="localhost",    # your host, usually localhost
                      user="root",         # your username
-                     passwd="0000",  # your password
+                     passwd="MoonbeaN!?0645",  # your password
                      db="new_schema")
             mycursor = db.cursor()
             sql= "INSERT INTO messages (user,messagescol) VALUES (%s,%s)"

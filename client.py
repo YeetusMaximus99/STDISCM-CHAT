@@ -1,31 +1,33 @@
 import socket
 from threading import Thread
+
 def listener(sock):
     while True:
         rcv = sock.recv(1024).decode()
-        print("\n" +rcv+ "\n")
+        print("\n" + rcv + "\n")
+        
+# Request server and port
+host = input("Enter server address (default: localhost): ") or "localhost"
+port = int(input("Enter port (default: 8000) ") or "8000")
 
-host = "localhost"
-port = 8000 # Changed the port to match the load balancer's port
-#create socket
+# Create socket
 sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-#connect to server
+
+# Connect to server
 sock.connect((host, port))
 name = input("Enter your name: ")
-#recieve message
-t = Thread(target=listener,args =(sock,))
+
+# Receive message
+t = Thread(target = listener, args = (sock,))
 
 t.daemon = True
-
 t.start()
-
 
 while True:
     msg = input()
-    if(msg == "quit"):
+    if (msg == "quit"):
         break
     msg = name + ":" + msg
     sock.send(msg.encode())
+    
 sock.close()
-
-

@@ -74,6 +74,6 @@ class RoundRobinLoadBalancer:
             
 if __name__ == "__main__":
     HOST, PORT = "localhost", 8000
-    SERVERS = [("192.168.1.101", 8081), ("192.168.1.102", 8082)] # Sample only; these are our other server instances.
+    SERVERS = [("localhost", 8081), ("192.168.1.102", 8082)] # Sample only; these are our other server instances.
     load_balancer = RoundRobinLoadBalancer(HOST, PORT, SERVERS)
     load_balancer.start()
