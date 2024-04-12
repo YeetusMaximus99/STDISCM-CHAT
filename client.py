@@ -3,7 +3,10 @@ import time
 from threading import Thread
 
 def reconnect():
+    retry_count = 0
     while True:
+        if retry_count >= 5:
+            break
         try:
             new_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             new_sock.connect((host, port))
@@ -11,7 +14,13 @@ def reconnect():
             return new_sock
         except socket.error:
             print("Connection failed. Retrying...")
+            retry_count += 1
             time.sleep(3)
+
+def stop_reconnect():
+    while True:
+        host = input("Enter server address (default localhost): ") or "localhost"
+        port = int(input("Enter port (default 8000): ") or "8000")
 
 def listener(sock):
     buffer = ""
@@ -33,31 +42,35 @@ def listener(sock):
             print(f"An error occurred: {e}")
             break
 
-host = input("Enter server address (default localhost): ") or "localhost"
-port = int(input("Enter port (default 8000): ") or "8000")
+if __name__ == '__main__':
+    connected = False
+    while not connected:
+        host = input("Enter server address (default localhost): ") or "localhost"
+        port = int(input("Enter port (default 8000): ") or "8000")
+        # Create socket and connect to server
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        try:
+            sock.connect((host, port))
+            connected = True
+        except socket.error as e:
+            print(f"Could not connect to server: {e}")
+            connected = False
+            sock = reconnect()
 
-# Create socket and connect to server
-sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-try:
-    sock.connect((host, port))
-except socket.error as e:
-    print(f"Could not connect to server: {e}")
-    sock = reconnect()
+    name = input("Enter your name: ")
+    t = Thread(target=listener, args=(sock,))
+    t.daemon = True
+    t.start()
 
-name = input("Enter your name: ")
-t = Thread(target=listener, args=(sock,))
-t.daemon = True
-t.start()
+    while True:
+        msg = input()
+        if msg == "quit":
+            break
+        msg = name + ":" + msg
+        try:
+            sock.send(msg.encode())
+        except socket.error:
+            print("Sending failed. Server might be down. Reconnecting...")
+            sock = reconnect()  # Reconnect if sending fails
 
-while True:
-    msg = input()
-    if msg == "quit":
-        break
-    msg = name + ":" + msg
-    try:
-        sock.send(msg.encode())
-    except socket.error:
-        print("Sending failed. Server might be down. Reconnecting...")
-        sock = reconnect()  # Reconnect if sending fails
-
-sock.close()
+    sock.close()
