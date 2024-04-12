@@ -11,7 +11,7 @@ last_checked_time = get_current_time()
 
 def send_history(cs):
     try:
-        db = mysql.connector.connect(host="localhost", user="root", passwd="0000", db="new_schema")
+        db = mysql.connector.connect(host=host_db, user="admin", passwd="STDISCM123", db="chat_schema")
         cursor = db.cursor()
         query = "SELECT user, messagescol FROM messages ORDER BY created_at ASC"
         cursor.execute(query)
@@ -41,7 +41,7 @@ def listener(cs, client_sockets):
 
 def distribute_message(msg, client_sockets):
     try:
-        db = mysql.connector.connect(host="localhost", user="root", passwd="0000", db="new_schema")
+        db = mysql.connector.connect(host=host_db, user="admin", passwd="STDISCM123", db="chat_schema")
         cursor = db.cursor()
         sql = "INSERT INTO messages (user, messagescol, created_at) VALUES (%s, %s, NOW())"
         user, content = msg.split(":", 1)
@@ -66,7 +66,7 @@ def poll_new_messages(client_sockets):
     global last_checked_time
     while True:
         try:
-            db = mysql.connector.connect(host="localhost", user="root", passwd="0000", db="new_schema")
+            db = mysql.connector.connect(host=host_db, user="admin", passwd="STDISCM123", db="chat_schema")
             cursor = db.cursor()
             query = f"SELECT user, messagescol, created_at FROM messages WHERE created_at > STR_TO_DATE('{last_checked_time}', '%Y-%m-%d %H:%i:%s') ORDER BY created_at ASC"
             cursor.execute(query)
@@ -83,8 +83,51 @@ def poll_new_messages(client_sockets):
             print(f"Error polling new messages: {e}")
         time.sleep(1)
 
-host = input("Enter Host Address: ")
-port = int(input("Enter Port Used: "))
+def create_database():
+    conn = mysql.connector.connect(
+        host=host_db,
+        user="admin",
+        password="STDISCM123"
+    )
+    cursor = conn.cursor()
+
+    cursor.execute(''' 
+        CREATE SCHEMA IF NOT EXISTS chat_schema 
+    ''')
+
+    cursor.execute(
+        ''' CREATE TABLE IF NOT EXISTS chat_schema.messages (
+            user VARCHAR(255),
+            messagescol LONGTEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+    conn.commit()
+    conn.close()
+
+host = ""
+host_db = ""
+server_num = 0
+port = 0
+
+while (server_num != 1 or server_num != 2):
+    server_num = int(input("Enter Server Number (1 or 2): "))
+    if server_num == 1:
+        host_db = "stdiscm-db-1.c7akos44mb75.ap-southeast-2.rds.amazonaws.com"
+        
+        # change these after server deployment
+        host = "localhost" 
+        port = 8081
+        break
+    elif server_num == 2:
+        host_db = "stdiscm-db-2.c7akos44mb75.ap-southeast-2.rds.amazonaws.com"
+        
+        # change these after server deployment
+        host = "localhost" 
+        port = 8082
+        break
+
+create_database()
 
 x = 5
 client_sockets = set()
@@ -97,6 +140,7 @@ print(f"[*] Listening as {host}:{port}")
 polling_thread = Thread(target=poll_new_messages, args=(client_sockets,))
 polling_thread.daemon = True
 polling_thread.start()
+
 
 while True:
     try:
