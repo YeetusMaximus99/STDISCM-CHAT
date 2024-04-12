@@ -1,8 +1,12 @@
 import socket
 from threading import Thread
 import mysql.connector
+import pickle
 import time
 from datetime import datetime, timedelta
+
+global LOGS
+LOGS = []
 
 def get_current_time():
     return (datetime.utcnow() - timedelta(seconds=1)).strftime('%Y-%m-%d %H:%M:%S')
@@ -25,30 +29,32 @@ def send_history(cs):
     except Exception as e:
         print(f"Failed to send history: {e}")
 
-def listener(cs, client_sockets):
+def listener(cs, client_sockets, server):
     send_history(cs)
     while True:
         try:
             msg = cs.recv(1024).decode()
             if not msg:
                 raise Exception("Client disconnected.")
-            distribute_message(msg, client_sockets)
+            distribute_message(msg, client_sockets, server)
         except Exception as e:
             print(e)
             client_sockets.remove(cs)
             cs.close()
             return
 
-def distribute_message(msg, client_sockets):
+def distribute_message(msg, client_sockets, server):
     try:
         db = mysql.connector.connect(host=host_db, user="admin", passwd="STDISCM123", db="chat_schema")
         cursor = db.cursor()
         sql = "INSERT INTO messages (user, messagescol, created_at) VALUES (%s, %s, NOW())"
         user, content = msg.split(":", 1)
+        LOGS.append((sql, (user, content)))
         cursor.execute(sql, (user, content))
         db.commit()
         cursor.close()
         db.close()
+        send_logs(LOGS, server)
         broadcast_message(msg, client_sockets)
     except Exception as e:
         print(f"Error distributing message: {e}")
@@ -83,6 +89,40 @@ def poll_new_messages(client_sockets):
             print(f"Error polling new messages: {e}")
         time.sleep(1)
 
+# def send_logs(LOGS, server):
+#     print(LOGS)
+#     if server == 1:
+#         receiver = ("localhost", 5173)
+#     elif server == 2:
+#         receiver = ("localhost", 8081)
+#     try:
+#         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+#             s.connect(receiver)
+#             data = pickle.dumps(LOGS)
+#             s.sendall(data)
+#     except Exception as e:
+#         print(f"Error Propagating Updates: {e}")
+
+# def receive_logs(server):
+#     if server == 1:
+#         sender = ("localhost", 5173)
+#     elif server == 2:
+#         sender = ("localhost", 8081)
+#     try:
+#         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+#             s.bind(sender)
+#             s.listen(1)
+#             conn, addr = s.accept()
+#             with conn:
+#                 print(f"Connected by {addr}")
+#                 data = conn.recv(4096)  # Adjust buffer size as needed
+#                 received_logs = pickle.loads(data)
+#                 print(received_logs)
+#                 return received_logs
+#     except Exception as e:
+#         print(f"Error Receiving Updates: {e}")
+#         return []
+
 def create_database():
     conn = mysql.connector.connect(
         host=host_db,
@@ -105,56 +145,61 @@ def create_database():
     conn.commit()
     conn.close()
 
-host = ""
-host_db = ""
-server_num = 0
-port = 0
 
-while (server_num != 1 or server_num != 2):
-    server_num = int(input("Enter Server Number (1 or 2): "))
-    if server_num == 1:
-        host_db = "stdiscm-db-1.c7akos44mb75.ap-southeast-2.rds.amazonaws.com"
-        
-        # change these after server deployment
-        host = "localhost" 
-        port = 8081
-        break
-    elif server_num == 2:
-        host_db = "stdiscm-db-2.c7akos44mb75.ap-southeast-2.rds.amazonaws.com"
-        
-        # change these after server deployment
-        host = "localhost" 
-        port = 8082
-        break
+if __name__ == '__main__':
+    host = ""
+    host_db = ""
+    server_num = 0
+    port = 0
 
-create_database()
+    while (server_num != 1 or server_num != 2):
+        server_num = int(input("Enter Server Number (1 or 2): "))
+        if server_num == 1:
+            host_db = "stdiscm-db-1.c7akos44mb75.ap-southeast-2.rds.amazonaws.com"
+            
+            # change these after server deployment
+            host = "localhost" 
+            port = 8081
+            break
+        elif server_num == 2:
+            host_db = "stdiscm-db-2.c7akos44mb75.ap-southeast-2.rds.amazonaws.com"
+            
+            # change these after server deployment
+            host = "localhost" 
+            port = 5173
+            break
 
-x = 5
-client_sockets = set()
-s = socket.socket()
-s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-s.bind((host, port))
-s.listen(x)
-print(f"[*] Listening as {host}:{port}")
+    create_database()
 
-polling_thread = Thread(target=poll_new_messages, args=(client_sockets,))
-polling_thread.daemon = True
-polling_thread.start()
+    x = 5
+    client_sockets = set()
+    s = socket.socket()
+    s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    s.bind((host, port))
+    s.listen(x)
+    print(f"[*] Listening as {host}:{port}")
 
+    polling_thread = Thread(target=poll_new_messages, args=(client_sockets,))
+    polling_thread.daemon = True
+    polling_thread.start()
 
-while True:
-    try:
-        client_socket, client_address = s.accept()
-        print(f"[+] {client_address} connected.")
-        client_sockets.add(client_socket)
-        t = Thread(target=listener, args=(client_socket, client_sockets))
-        t.daemon = True
-        t.start()
-    except Exception as e:
-        print(f"Accepting new connection failed: {e}")
+    # get_logs_t = Thread(target=receive_logs, args=(server_num,))
+    # get_logs_t.daemon = True
+    # get_logs_t.start()
 
-# close client sockets
-for cs in client_sockets:
-    cs.close()
-# close server socket
-s.close()
+    while True:
+        try:
+            client_socket, client_address = s.accept()
+            print(f"[+] {client_address} connected.")
+            client_sockets.add(client_socket)
+            t = Thread(target=listener, args=(client_socket, client_sockets, server_num))
+            t.daemon = True
+            t.start()
+        except Exception as e:
+            print(f"Accepting new connection failed: {e}")
+
+    # close client sockets
+    for cs in client_sockets:
+        cs.close()
+    # close server socket
+    s.close()
