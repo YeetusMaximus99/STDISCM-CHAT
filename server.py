@@ -41,7 +41,15 @@ def listener(cs, client_sockets):
 
 def distribute_message(msg, client_sockets):
     try:
-        db = mysql.connector.connect(host=host_db, user="admin", passwd="STDISCM123", db="chat_schema")
+        db = mysql.connector.connect(host='stdiscm-db-1.c7akos44mb75.ap-southeast-2.rds.amazonaws.com', user="admin", passwd="STDISCM123", db="chat_schema")
+        cursor = db.cursor()
+        sql = "INSERT INTO messages (user, messagescol, created_at) VALUES (%s, %s, NOW())"
+        user, content = msg.split(":", 1)
+        cursor.execute(sql, (user, content))
+        db.commit()
+        cursor.close()
+        db.close()
+        db = mysql.connector.connect(host='stdiscm-db-2.c7akos44mb75.ap-southeast-2.rds.amazonaws.com', user="admin", passwd="STDISCM123", db="chat_schema")
         cursor = db.cursor()
         sql = "INSERT INTO messages (user, messagescol, created_at) VALUES (%s, %s, NOW())"
         user, content = msg.split(":", 1)
