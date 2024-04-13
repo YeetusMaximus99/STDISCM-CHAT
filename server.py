@@ -46,39 +46,39 @@ def send_history(cs):
     except Exception as e:
         print(f"Failed to send history: {e}")
 
-def replicate_data():
+def replicate_data(msg):
+    replication_msg = f"update:{msg}"  # Prepend a tag to indicate this is a replication message
     for server in other_servers:
-        if server != server_address:  # Do not send back to itself
+        if server != server_address:  # Ensure not sending back to itself
             try:
                 sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
                 sock.connect(server)
-                sock.sendall("receive_update".encode())
+                sock.sendall(replication_msg.encode() + b'\n')
                 sock.close()
             except Exception as e:
                 print(f"Failed to replicate to {server}: {e}")
 
 def listener(cs, client_sockets):
+    global incoming_update  # Correctly declare global usage
     send_history(cs)
     while True:
         try:
             msg = cs.recv(1024).decode()
             if not msg:
                 raise Exception("Client disconnected.")
-            if msg == 'receive_update':
-                incoming_update = 1
-
+            if msg.startswith("update:"):  # Assume all replicated messages start with 'update:'
+                incoming_update = 1  # Set the flag that this server is receiving an update
             if incoming_update == 0:           
                 distribute_message(msg, client_sockets)
+                replicate_data(msg)  # Send the actual message for replication
             else:
-                receive_update(msg,client_sockets)
+                receive_update(msg.split("update:")[1], client_sockets)  # Handle the actual content update
+                incoming_update = 0  # Reset the flag after handling
         except Exception as e:
             print(e)
-            try:
-                client_sockets.remove(cs)
-            except KeyError:
-                print("Socket already removed")
+            client_sockets.discard(cs)  # Use discard to avoid KeyError if the socket isn't present
             cs.close()
-            return
+            break  # Ensure the loop breaks on error
 
 def distribute_message(msg, client_sockets):
     try:
