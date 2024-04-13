@@ -9,8 +9,9 @@ def get_current_time():
 
 last_checked_time = get_current_time()
 
-# Adjusted list of server addresses to include self to avoid sending messages to self
-other_servers = [('192.168.237.90', 8081), ('192.168.237.99', 8082)]
+# List of server addresses for replication (exclude the server's own address in its list)
+server_address = None  # This will be set based on input
+other_servers = [('192.168.237.90', 8081), ('192.168.237.99', 8082)]  # Adjust this list in each server accordingly
 
 def send_history(cs):
     try:
@@ -28,18 +29,18 @@ def send_history(cs):
     except Exception as e:
         print(f"Failed to send history: {e}")
 
-def replicate_data(msg, origin_server):
+def replicate_data(msg):
     for server in other_servers:
-        if server != origin_server:  # Prevent sending message back to the origin server
+        if server != server_address:  # Do not send back to itself
             try:
                 sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
                 sock.connect(server)
-                sock.sendall(msg.encode() + b'\n')  # Send the message to other server
+                sock.sendall(msg.encode() + b'\n')
                 sock.close()
             except Exception as e:
                 print(f"Failed to replicate to {server}: {e}")
 
-def listener(cs, client_sockets, server_address):
+def listener(cs, client_sockets):
     send_history(cs)
     while True:
         try:
@@ -47,10 +48,13 @@ def listener(cs, client_sockets, server_address):
             if not msg:
                 raise Exception("Client disconnected.")
             distribute_message(msg, client_sockets)
-            replicate_data(msg, server_address)  # Replicate the message to other servers
+            replicate_data(msg)  # Replicate the message to other servers
         except Exception as e:
             print(e)
-            client_sockets.remove(cs)
+            try:
+                client_sockets.remove(cs)
+            except KeyError:
+                print("Socket already removed")
             cs.close()
             return
 
@@ -69,7 +73,7 @@ def distribute_message(msg, client_sockets):
         print(f"Error distributing message: {e}")
 
 def broadcast_message(msg, client_sockets):
-    for client_socket in client_sockets:
+    for client_socket in client_sockets.copy():
         try:
             client_socket.send((msg + "\n").encode())
         except Exception as e:
@@ -89,7 +93,7 @@ def poll_new_messages(client_sockets):
             if rows:
                 messages = [f"{row[0]}:{row[1]}" for row in rows]
                 full_messages = "\n".join(messages) + "\n"
-                for client_socket in client_sockets:
+                for client_socket in client_sockets.copy():
                     client_socket.send(full_messages.encode())
                 last_checked_time = rows[-1][2].strftime('%Y-%m-%d %H:%M:%S')
             cursor.close()
@@ -105,13 +109,9 @@ def create_database():
         password="MoonbeaN!?0645"
     )
     cursor = conn.cursor()
-
-    cursor.execute(''' 
-        CREATE SCHEMA IF NOT EXISTS new_schema 
-    ''')
-
-    cursor.execute(
-        ''' CREATE TABLE IF NOT EXISTS new_schema.messages (
+    cursor.execute('''CREATE SCHEMA IF NOT EXISTS new_schema''')
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS new_schema.messages (
             user VARCHAR(255),
             messagescol LONGTEXT,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -122,6 +122,7 @@ def create_database():
 
 host = input("Enter Host Address: ")
 port = int(input("Enter Port Used: "))
+server_address = (host, port)  # Set the server's own address
 
 create_database()
 
@@ -133,8 +134,6 @@ s.bind((host, port))
 s.listen(x)
 print(f"[*] Listening as {host}:{port}")
 
-server_address = (host, port)  # Server's own address
-
 polling_thread = Thread(target=poll_new_messages, args=(client_sockets,))
 polling_thread.daemon = True
 polling_thread.start()
@@ -144,7 +143,7 @@ while True:
         client_socket, client_address = s.accept()
         print(f"[+] {client_address} connected.")
         client_sockets.add(client_socket)
-        t = Thread(target=listener, args=(client_socket, client_sockets, server_address))
+        t = Thread(target=listener, args=(client_socket, client_sockets))
         t.daemon = True
         t.start()
     except Exception as e:
