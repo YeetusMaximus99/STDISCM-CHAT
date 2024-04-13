@@ -3,14 +3,13 @@ from threading import Thread
 import mysql.connector
 import time
 from datetime import datetime, timedelta
+import threading
 
 def get_current_time():
     return (datetime.utcnow() - timedelta(seconds=1)).strftime('%Y-%m-%d %H:%M:%S')
 
 last_checked_time = get_current_time()
-
-# Hardcoded list of server addresses
-other_servers = [('172.20.10.3', 8081), ('172.20.10.5', 8082)]  # Example IPs and ports
+client_sockets_lock = threading.Lock()  # Lock for managing access to client_sockets set
 
 def send_history(cs):
     try:
@@ -19,10 +18,9 @@ def send_history(cs):
         query = "SELECT user, messagescol FROM messages ORDER BY created_at ASC"
         cursor.execute(query)
         rows = cursor.fetchall()
-        if rows:
-            messages = [f"{row[0]}:{row[1]}" for row in rows]
-            full_history = "\n".join(messages) + "\n"
-            cs.sendall(full_history.encode())
+        messages = [f"{row[0]}:{row[1]}" for row in rows]
+        full_history = "\n".join(messages) + "\n"
+        cs.sendall(full_history.encode())
         cursor.close()
         db.close()
     except Exception as e:
@@ -33,7 +31,7 @@ def replicate_data(msg):
         try:
             sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             sock.connect(server)
-            sock.sendall(msg.encode() + b'\n')  # Send the message to other server
+            sock.sendall(msg.encode() + b'\n')
             sock.close()
         except Exception as e:
             print(f"Failed to replicate to {server}: {e}")
@@ -46,10 +44,11 @@ def listener(cs, client_sockets):
             if not msg:
                 raise Exception("Client disconnected.")
             distribute_message(msg, client_sockets)
-            replicate_data(msg)  # Replicate the message to other servers
+            replicate_data(msg)
         except Exception as e:
             print(e)
-            client_sockets.remove(cs)
+            with client_sockets_lock:
+                client_sockets.remove(cs)
             cs.close()
             return
 
@@ -68,13 +67,17 @@ def distribute_message(msg, client_sockets):
         print(f"Error distributing message: {e}")
 
 def broadcast_message(msg, client_sockets):
-    for client_socket in client_sockets:
-        try:
-            client_socket.send((msg + "\n").encode())
-        except Exception as e:
-            client_sockets.remove(client_socket)
-            client_socket.close()
-            print(f"Failed to send to a client: {e}")
+    with client_sockets_lock:
+        clients_to_remove = []
+        for client_socket in client_sockets:
+            try:
+                client_socket.send((msg + "\n").encode())
+            except Exception as e:
+                clients_to_remove.append(client_socket)
+                print(f"Failed to send to a client: {e}")
+        for client in clients_to_remove:
+            client_sockets.remove(client)
+            client.close()
 
 def poll_new_messages(client_sockets):
     global last_checked_time
@@ -88,8 +91,9 @@ def poll_new_messages(client_sockets):
             if rows:
                 messages = [f"{row[0]}:{row[1]}" for row in rows]
                 full_messages = "\n".join(messages) + "\n"
-                for client_socket in client_sockets:
-                    client_socket.send(full_messages.encode())
+                with client_sockets_lock:
+                    for client_socket in client_sockets:
+                        client_socket.send(full_messages.encode())
                 last_checked_time = rows[-1][2].strftime('%Y-%m-%d %H:%M:%S')
             cursor.close()
             db.close()
@@ -105,21 +109,19 @@ def create_database():
     )
     cursor = conn.cursor()
 
-    cursor.execute(''' 
-        CREATE SCHEMA IF NOT EXISTS new_schema 
-    ''')
+    cursor.execute("CREATE SCHEMA IF NOT EXISTS new_schema")
 
     cursor.execute(
-        ''' CREATE TABLE IF NOT EXISTS new_schema.messages (
+        "CREATE TABLE IF NOT EXISTS new_schema.messages (
             user VARCHAR(255),
             messagescol LONGTEXT,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-    ''')
+        )"
+    )
     conn.commit()
     conn.close()
 
-host = input("Enter Host Address: ")
+host = '0.0.0.0'  # Listen on all network interfaces
 port = int(input("Enter Port Used: "))
 
 create_database()
@@ -140,15 +142,16 @@ while True:
     try:
         client_socket, client_address = s.accept()
         print(f"[+] {client_address} connected.")
-        client_sockets.add(client_socket)
+        with client_sockets_lock:
+            client_sockets.add(client_socket)
         t = Thread(target=listener, args=(client_socket, client_sockets))
         t.daemon = True
         t.start()
     except Exception as e:
         print(f"Accepting new connection failed: {e}")
 
-# close client sockets
+# Close client sockets
 for cs in client_sockets:
     cs.close()
-# close server socket
+# Close server socket
 s.close()
