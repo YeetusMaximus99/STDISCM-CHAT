@@ -52,7 +52,7 @@ def replicate_data():
             try:
                 sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
                 sock.connect(server)
-                sock.sendall("rececive_update".encode())
+                sock.sendall("receive_update".encode())
                 sock.close()
             except Exception as e:
                 print(f"Failed to replicate to {server}: {e}")
