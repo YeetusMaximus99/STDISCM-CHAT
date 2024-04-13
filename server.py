@@ -9,6 +9,9 @@ def get_current_time():
 
 last_checked_time = get_current_time()
 
+# Hardcoded list of server addresses
+other_servers = [('172.20.10.3', 8081), ('172.20.10.5', 8082)]  # Example IPs and ports
+
 def send_history(cs):
     try:
         db = mysql.connector.connect(host="localhost", user="root", passwd="WENKWONK420", db="new_schema")
@@ -25,6 +28,16 @@ def send_history(cs):
     except Exception as e:
         print(f"Failed to send history: {e}")
 
+def replicate_data(msg):
+    for server in other_servers:
+        try:
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock.connect(server)
+            sock.sendall(msg.encode() + b'\n')  # Send the message to other server
+            sock.close()
+        except Exception as e:
+            print(f"Failed to replicate to {server}: {e}")
+
 def listener(cs, client_sockets):
     send_history(cs)
     while True:
@@ -33,6 +46,7 @@ def listener(cs, client_sockets):
             if not msg:
                 raise Exception("Client disconnected.")
             distribute_message(msg, client_sockets)
+            replicate_data(msg)  # Replicate the message to other servers
         except Exception as e:
             print(e)
             client_sockets.remove(cs)
