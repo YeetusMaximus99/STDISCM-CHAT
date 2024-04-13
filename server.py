@@ -11,7 +11,7 @@ last_checked_time = get_current_time()
 
 def send_history(cs):
     try:
-        db = mysql.connector.connect(host="localhost", user="root", passwd="0000", db="new_schema")
+        db = mysql.connector.connect(host="localhost", user="root", passwd="WENKWONK420", db="new_schema")
         cursor = db.cursor()
         query = "SELECT user, messagescol FROM messages ORDER BY created_at ASC"
         cursor.execute(query)
@@ -41,7 +41,7 @@ def listener(cs, client_sockets):
 
 def distribute_message(msg, client_sockets):
     try:
-        db = mysql.connector.connect(host="localhost", user="root", passwd="0000", db="new_schema")
+        db = mysql.connector.connect(host="localhost", user="root", passwd="WENKWONK420", db="new_schema")
         cursor = db.cursor()
         sql = "INSERT INTO messages (user, messagescol, created_at) VALUES (%s, %s, NOW())"
         user, content = msg.split(":", 1)
@@ -66,7 +66,7 @@ def poll_new_messages(client_sockets):
     global last_checked_time
     while True:
         try:
-            db = mysql.connector.connect(host="localhost", user="root", passwd="0000", db="new_schema")
+            db = mysql.connector.connect(host="localhost", user="root", passwd="WENKWONK420", db="new_schema")
             cursor = db.cursor()
             query = f"SELECT user, messagescol, created_at FROM messages WHERE created_at > STR_TO_DATE('{last_checked_time}', '%Y-%m-%d %H:%i:%s') ORDER BY created_at ASC"
             cursor.execute(query)
@@ -83,8 +83,32 @@ def poll_new_messages(client_sockets):
             print(f"Error polling new messages: {e}")
         time.sleep(1)
 
+def create_database():
+    conn = mysql.connector.connect(
+        host="localhost",
+        user="root",
+        password="WENKWONK420"
+    )
+    cursor = conn.cursor()
+
+    cursor.execute(''' 
+        CREATE SCHEMA IF NOT EXISTS new_schema 
+    ''')
+
+    cursor.execute(
+        ''' CREATE TABLE IF NOT EXISTS new_schema.messages (
+            user VARCHAR(255),
+            messagescol LONGTEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+    conn.commit()
+    conn.close()
+
 host = input("Enter Host Address: ")
 port = int(input("Enter Port Used: "))
+
+create_database()
 
 x = 5
 client_sockets = set()
