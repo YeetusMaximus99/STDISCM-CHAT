@@ -9,8 +9,8 @@ def get_current_time():
 
 last_checked_time = get_current_time()
 
-# Hardcoded list of server addresses
-other_servers = [('172.20.10.3', 8081), ('172.20.10.5', 8082)]  # Example IPs and ports
+# Adjusted list of server addresses to include self to avoid sending messages to self
+other_servers = [('192.168.237.90', 8081), ('192.168.237.99', 8082)]
 
 def send_history(cs):
     try:
@@ -28,17 +28,18 @@ def send_history(cs):
     except Exception as e:
         print(f"Failed to send history: {e}")
 
-def replicate_data(msg):
+def replicate_data(msg, origin_server):
     for server in other_servers:
-        try:
-            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            sock.connect(server)
-            sock.sendall(msg.encode() + b'\n')  # Send the message to other server
-            sock.close()
-        except Exception as e:
-            print(f"Failed to replicate to {server}: {e}")
+        if server != origin_server:  # Prevent sending message back to the origin server
+            try:
+                sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                sock.connect(server)
+                sock.sendall(msg.encode() + b'\n')  # Send the message to other server
+                sock.close()
+            except Exception as e:
+                print(f"Failed to replicate to {server}: {e}")
 
-def listener(cs, client_sockets):
+def listener(cs, client_sockets, server_address):
     send_history(cs)
     while True:
         try:
@@ -46,7 +47,7 @@ def listener(cs, client_sockets):
             if not msg:
                 raise Exception("Client disconnected.")
             distribute_message(msg, client_sockets)
-            replicate_data(msg)  # Replicate the message to other servers
+            replicate_data(msg, server_address)  # Replicate the message to other servers
         except Exception as e:
             print(e)
             client_sockets.remove(cs)
@@ -132,6 +133,8 @@ s.bind((host, port))
 s.listen(x)
 print(f"[*] Listening as {host}:{port}")
 
+server_address = (host, port)  # Server's own address
+
 polling_thread = Thread(target=poll_new_messages, args=(client_sockets,))
 polling_thread.daemon = True
 polling_thread.start()
@@ -141,7 +144,7 @@ while True:
         client_socket, client_address = s.accept()
         print(f"[+] {client_address} connected.")
         client_sockets.add(client_socket)
-        t = Thread(target=listener, args=(client_socket, client_sockets))
+        t = Thread(target=listener, args=(client_socket, client_sockets, server_address))
         t.daemon = True
         t.start()
     except Exception as e:
