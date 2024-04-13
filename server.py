@@ -8,10 +8,27 @@ def get_current_time():
     return (datetime.utcnow() - timedelta(seconds=1)).strftime('%Y-%m-%d %H:%M:%S')
 
 last_checked_time = get_current_time()
-
+incoming_update = 0
 # List of server addresses for replication (exclude the server's own address in its list)
 server_address = None  # This will be set based on input
 other_servers = [('192.168.237.90', 8081), ('192.168.237.99', 8082)]  # Adjust this list in each server accordingly
+def receive_update(msg,client_sockets):
+    try:
+        db = mysql.connector.connect(host="localhost", user="root", passwd="MoonbeaN!?0645", db="new_schema")
+        cursor = db.cursor()
+        sql = "INSERT INTO messages (user, messagescol, created_at) VALUES (%s, %s, NOW())"
+        user, content = msg.split(":", 1)
+        cursor.execute(sql, (user, content))
+        db.commit()
+        cursor.close()
+        db.close()
+        
+    except Exception as e:
+        print(f"Error distributing message: {e}")
+    
+    incoming_update = 0
+    
+
 
 def send_history(cs):
     try:
@@ -29,13 +46,13 @@ def send_history(cs):
     except Exception as e:
         print(f"Failed to send history: {e}")
 
-def replicate_data(msg):
+def replicate_data():
     for server in other_servers:
         if server != server_address:  # Do not send back to itself
             try:
                 sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
                 sock.connect(server)
-                sock.sendall(msg.encode() + b'\n')
+                sock.sendall("rececive_update".encode())
                 sock.close()
             except Exception as e:
                 print(f"Failed to replicate to {server}: {e}")
@@ -47,8 +64,13 @@ def listener(cs, client_sockets):
             msg = cs.recv(1024).decode()
             if not msg:
                 raise Exception("Client disconnected.")
-            distribute_message(msg, client_sockets)
-            replicate_data(msg)  # Replicate the message to other servers
+            if msg == 'receive_update':
+                incoming_update = 1
+
+            if incoming_update == 0:           
+                distribute_message(msg, client_sockets)
+            else:
+                receive_update(msg,client_sockets)
         except Exception as e:
             print(e)
             try:
